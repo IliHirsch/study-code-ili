@@ -1,175 +1,171 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MAX_MESSWERTE 3000
-
-
-/* ----------- Datenstrukturen ----------- */
-
 typedef struct {
-    float zeit;            // Zeit in Sekunden
-    double wahrscheinlichkeit;  // Signalwert (0..1)
-} Messwert;
+    float zeit;                         // Zeit in Sekunden
+    double wahrscheinlichkeit;          // Signalwert (0,...,1)
+} SensorData;
 
 typedef struct {
     int id;                            // Sensor-ID
     double schwellenwert;              // Detektionsschwelle
-    Messwert daten[MAX_MESSWERTE];     // Messdaten
-    int detektion[MAX_MESSWERTE];      // Binäres Signal (0/1)
+    SensorData daten[3000];            // Messdaten
+    int erkennung[3000];               // Binäres Signal (0/1) / Tipp
     int anzahl_messwerte;              // Anzahl eingelesener Werte
 } Sensor;
 
+/**********************************************************************************/
 
-/* ----------- Funktionsprototypen ----------- */
-
-int lese_messdaten(const char *dateiname, Sensor *sensor);
-void erzeuge_detectionsignal(Sensor *sensor);
-void gib_intervalle_aus(const char *titel, Sensor *sensor);
-void gib_fusion_aus(Sensor *sensor1, Sensor *sensor2);
-
-
-/* ----------- Hauptprogramm ----------- */
-
-int main() {
-
-    Sensor sensor1 = {1, 0.8};
-    Sensor sensor2 = {2, 0.7};
-
-    if (!lese_messdaten("sensor1.txt", &sensor1)) {
-        printf("Fehler beim Lesen von sensor1.txt\n");
-        return 1;
-    }
-
-    if (!lese_messdaten("sensor2.txt", &sensor2)) {
-        printf("Fehler beim Lesen von sensor2.txt\n");
-        return 1;
-    }
-
-    erzeuge_detectionsignal(&sensor1);
-    erzeuge_detectionsignal(&sensor2);
-
-    printf("\n--- Objekterkennung Ergebnisse ---\n\n");
-
-    gib_intervalle_aus("Sensor 1 Detektionen:", &sensor1);
-    gib_intervalle_aus("Sensor 2 Detektionen:", &sensor2);
-    gib_fusion_aus(&sensor1, &sensor2);
-
-    return 0;
-}
-
-
-/* ----------- Funktionsdefinitionen ----------- */
-
-int lese_messdaten(const char *dateiname, Sensor *sensor) {
+int lese_messdaten(const char *dateiname, Sensor *sensor) {                                         //mit Rückgabewert, deswegen int
 
     FILE *datei = fopen(dateiname, "r");
-    if (datei == NULL) {
-        return 0;
+    if (!datei)                                                                                     //Fehler beim Öffnen
+    {
+        return -1;
     }
 
     int i = 0;
-
-    while (i < MAX_MESSWERTE &&
-           fscanf(datei, "%f %lf",
-                  &sensor->daten[i].zeit,
-                  &sensor->daten[i].wahrscheinlichkeit) == 2) {
+    while (fscanf(datei, "%f %lf",&sensor->daten[i].zeit, &sensor->daten[i].wahrscheinlichkeit) == 2) //Wenn gelesen, dann Werte speichern
+    {
+        sensor->anzahl_messwerte++;
         i++;
     }
 
-    sensor->anzahl_messwerte = i;
-
     fclose(datei);
-    return 1;
+    return 1; 
 }
 
+/**********************************************************************************/
 
-void erzeuge_detectionsignal(Sensor *sensor) {
+void erzeuge_erkennungssignal(Sensor *sensor) {                             //Erkennungsignal als Extrafunktion, 2 Sensoren
 
     for (int i = 0; i < sensor->anzahl_messwerte; i++) {
 
-        if (sensor->daten[i].wahrscheinlichkeit > sensor->schwellenwert)
-            sensor->detektion[i] = 1;
-        else
-            sensor->detektion[i] = 0;
+        if (sensor->daten[i].wahrscheinlichkeit > sensor->schwellenwert)    //Erkennungsschwelle überschritten
+        {
+            sensor->erkennung[i] = 1;
+        }
+        else 
+        {
+            sensor->erkennung[i] = 0;                                       //Erkennungsschwelle nicht überschritten
+        }
     }
 }
 
+/**********************************************************************************/
 
 void gib_intervalle_aus(const char *titel, Sensor *sensor) {
 
-    printf("%s\n", titel);
+    printf("%s\n", titel);                                                              //Printf der übergabe im main
 
-    int aktiv = 0;
-    float startzeit = 0.0;
+    int aktiv = 0; 
+    float startzeit = 0.0; 
 
-    for (int i = 0; i < sensor->anzahl_messwerte; i++) {
-
-        /* Start eines Intervalls */
-        if (!aktiv && sensor->detektion[i] == 1) {
-            aktiv = 1;
+    for (int i = 0; i < sensor->anzahl_messwerte; i++)                                  //Start des Intervall
+    {
+        if (!aktiv && sensor->erkennung[i] == 1) 
+        {
+            aktiv = 1;                                                                  //Sensor aktiv
             startzeit = sensor->daten[i].zeit;
         }
 
-        /* Ende eines Intervalls */
-        if (aktiv &&
-            (sensor->detektion[i] == 0 ||
-             i == sensor->anzahl_messwerte - 1)) {
-
+        
+        if (aktiv && (sensor->erkennung[i] == 0 || i == sensor->anzahl_messwerte - 1))  //Ende des Intervall
+        {
             float endzeit;
 
-            if (sensor->detektion[i] == 0)
+            if (sensor->erkennung[i] == 0)                                              //Sensor wird abgeschaltet
+            {
                 endzeit = sensor->daten[i - 1].zeit;
-            else
-                endzeit = sensor->daten[i].zeit;
+            }
+            else {
+                endzeit = sensor->daten[i].zeit;                                        //Sensor wird am Ende der Liste angeschaltet 
+            }
 
-            printf("Start: %.2f s  Ende: %.2f s\n",
-                   startzeit, endzeit);
-
+            printf("Objekt erkannt von %.2f s bis %.2f s\n", startzeit, endzeit);       //Ausgabe der Zeiten/Intervalle
             aktiv = 0;
         }
     }
-
-    printf("\n");
 }
 
+/**********************************************************************************/
 
 void gib_fusion_aus(Sensor *sensor1, Sensor *sensor2) {
 
-    printf("Fusion (beide Sensoren aktiv):\n");
+    printf("\nFusion (beide Sensoren aktiv):\n");
 
-    int aktiv = 0;
+    int aktiv = 0;                                                          //Ini der Werte/Funktion
     float startzeit = 0.0;
 
-    int min_messwerte = (sensor1->anzahl_messwerte < sensor2->anzahl_messwerte)
-                        ? sensor1->anzahl_messwerte
-                        : sensor2->anzahl_messwerte;
+    int min_messwerte;                                                      //Variable für Schleifen, Begrenzung
+
+    if (sensor1->anzahl_messwerte < sensor2->anzahl_messwerte)              //Kleinere Anzahl der Messwerte = Begrenzung
+    {
+    min_messwerte = sensor1->anzahl_messwerte;                              //Sensor1 hat weniger Messwerte
+    } 
+
+    else 
+    {
+    min_messwerte = sensor2->anzahl_messwerte;                              //Sensor2 hat weniger Messwerte
+    }
 
     for (int i = 0; i < min_messwerte; i++) {
 
-        int fusion = sensor1->detektion[i] &&
-                     sensor2->detektion[i];
+        int fusion = sensor1->erkennung[i] && sensor2->erkennung[i];        //Beide Sensoren müssen aktiv sein
 
-        if (!aktiv && fusion) {
+        if (!aktiv && fusion) 
+        {
             aktiv = 1;
             startzeit = sensor1->daten[i].zeit;
         }
 
-        if (aktiv &&
-            (!fusion || i == min_messwerte - 1)) {
-
+        if (aktiv && (!fusion || i == min_messwerte - 1))                   //Ende der Fusion
+            {
             float endzeit;
 
-            if (!fusion)
+            if (!fusion)                                                    //Fusion wird unterbrochen
+            {
                 endzeit = sensor1->daten[i - 1].zeit;
+            }
             else
+            {
                 endzeit = sensor1->daten[i].zeit;
+            }
 
-            printf("Start: %.2f s  Ende: %.2f s\n",
-                   startzeit, endzeit);
+            printf("Start: %.2f s  Ende: %.2f s\n", startzeit, endzeit);    //Ausgabe der Zeiten/Intervalle der Fusion
 
             aktiv = 0;
         }
     }
 
     printf("\n");
+}
+
+/**********************************************************************************/
+
+int main (){
+    Sensor sensor1 = {1, 0.8}; //ID, Schwellenwert
+    Sensor sensor2 = {2, 0.7}; //ID, Schwellenwert
+
+    if (!lese_messdaten("sensor1.txt", &sensor1)) {
+        printf("Fehler beim Lesen von sensor1.txt\n");
+        return -1;
+    }
+
+    if (!lese_messdaten("sensor2.txt", &sensor2)) {
+        printf("Fehler beim Lesen von sensor2.txt\n");
+        return -1;
+    }
+
+    erzeuge_erkennungssignal(&sensor1);
+    erzeuge_erkennungssignal(&sensor2);
+
+    printf("Objekterkennung Ergebnisse\n");
+
+    gib_intervalle_aus("\nSensor 1 Erkennungen:", &sensor1);
+    gib_intervalle_aus("\nSensor 2 Erkennungen:", &sensor2);
+    
+    gib_fusion_aus(&sensor1, &sensor2);
+
+    return 0;
 }
